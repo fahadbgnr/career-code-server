@@ -1,13 +1,33 @@
-const express = require('express')
-const cors = require('cors')
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 const app = express();
 const port = process.env.PORT || 3000;
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173'],
+    credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 
+
+const logger = (req, res, next) => {
+    console.log('inside the logger middleware');
+    next();
+
+}
+
+const verifyToken = (req, res, next)=>{
+    const token = req?.cookies?.token;
+    console.log('cookie in the middleware',token);
+
+    next();
+
+}
 
 
 
@@ -29,6 +49,29 @@ async function run() {
 
         const jobsCollection = client.db('careerCode').collection('jobs');
         const applicationsCollection = client.db('careerCode').collection('applications');
+
+
+        // jwt token related api
+        app.post('/jwt', async (req, res) => {
+            const userData = req.body;
+            const token = jwt.sign(userData, process.env.JWT_ACCESS_SECRET, { expiresIn: "1d" });
+
+            // set the token in the cookies
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: false
+
+            })
+
+
+            res.send({ success: true })
+        });
+
+
+
+
+
+
         // jobs api
         app.get('/jobs', async (req, res) => {
 
@@ -46,13 +89,13 @@ async function run() {
 
         });
 
-         app.get('/jobs/applications', async (req, res)=>{
+        app.get('/jobs/applications', async (req, res) => {
             const email = req.query.email;
-            const query = {hr_email: email};
+            const query = { hr_email: email };
             const jobs = await jobsCollection.find(query).toArray();
-          
+
             // should use aggregate to have optimum data fetching
-            for(const job of jobs ){
+            for (const job of jobs) {
                 const applicationQuery = { jobId: job._id.toString() }
                 const application_count = await applicationsCollection.countDocuments(applicationQuery);
                 job.application_count = application_count;
@@ -80,8 +123,11 @@ async function run() {
 
 
         // job application related api
-        app.get('/applications', async (req, res) => {
+        app.get('/applications', logger,verifyToken, async (req, res) => {
             const email = req.query.email;
+
+            // console.log("inside application api", req.cookies);
+
             const query = {
                 applicant: email
             }
